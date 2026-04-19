@@ -1,12 +1,15 @@
 from flask import Flask, request, jsonify
 import joblib
 import pandas as pd
+import os
 
 app = Flask(__name__)
 
-# Load model + columns
-model = joblib.load("../model/traffic_model.pkl")
-columns = joblib.load("../model/columns.pkl")
+# Correct path handling
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+model = joblib.load(os.path.join(BASE_DIR, '../model/traffic_model.pkl'))
+columns = joblib.load(os.path.join(BASE_DIR, '../model/columns.pkl'))
 
 @app.route('/')
 def home():
@@ -34,4 +37,6 @@ def predict():
     })
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
+    # Use dynamic port for Render
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
