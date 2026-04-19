@@ -4,4 +4,5 @@ scikit-learn
 xgboost
 joblib
 streamlit
-flask
+requests
+geopy

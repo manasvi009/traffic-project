@@ -9,7 +9,7 @@ from streamlit_folium import st_folium
 st.set_page_config(page_title="Traffic Prediction System", layout="wide")
 
 # 🔥 CHANGE THIS when deploying to AWS
-API_URL = "http://127.0.0.1:5000/predict"
+API_URL = "https://traffic-api-0w9r.onrender.com/predict"
 
 # ------------------ TITLE ------------------
 st.title("🚦 Smart Traffic Prediction System with Map")
