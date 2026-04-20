@@ -1,6 +1,5 @@
 import streamlit as st
 import requests
-import pandas as pd
 from geopy.geocoders import Nominatim
 import folium
 from streamlit_folium import st_folium
@@ -8,113 +7,159 @@ from streamlit_folium import st_folium
 # ------------------ CONFIG ------------------
 st.set_page_config(page_title="Traffic Prediction System", layout="wide")
 
-# 🔥 CHANGE THIS when deploying to AWS
 API_URL = "https://traffic-api-0w9r.onrender.com/predict"
+WEATHER_API_KEY = "198a7b515a67010cd0cc212227bc7255"
 
 # ------------------ TITLE ------------------
-st.title("🚦 Smart Traffic Prediction System with Map")
+st.title("🚦 Smart Traffic Prediction System with Live Map")
 
-# ------------------ SIDEBAR INPUT ------------------
-st.sidebar.header("Enter Trip Details")
+# ------------------ SIDEBAR ------------------
+st.sidebar.header("🚗 Enter Trip Details")
 
 start_area = st.sidebar.text_input("Start Area", "Delhi")
 end_area = st.sidebar.text_input("End Area", "Noida")
 
-distance = st.sidebar.number_input("Distance (km)", min_value=0.0)
-avg_speed = st.sidebar.number_input("Average Speed (km/h)", min_value=1.0)
+distance = st.sidebar.number_input("Distance (km)", min_value=0.1, value=10.0)
+avg_speed = st.sidebar.number_input("Average Speed (km/h)", min_value=1.0, value=40.0)
 
-time_of_day = st.sidebar.slider("Time of Day (0–23)", 0, 23)
+time_of_day = st.sidebar.slider("Time of Day (0–23)", 0, 23, 10)
 
 day_of_week = st.sidebar.selectbox(
     "Day of Week",
     ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"]
 )
 
-weather = st.sidebar.selectbox("Weather", ["Clear","Rainy","Foggy"])
+# ❌ Removed manual weather input
 traffic = st.sidebar.selectbox("Traffic Density", ["Low","Medium","High"])
 road = st.sidebar.selectbox("Road Type", ["Highway","City","Rural"])
 
-# ------------------ BUTTONS ------------------
-col1, col2 = st.columns(2)
+predict_btn = st.sidebar.button("🚀 Predict Travel Time")
 
-predict_clicked = col1.button("🚗 Predict Travel Time")
-map_clicked = col2.button("🗺️ Show Route on Map")
+# ------------------ GEOLOCATOR ------------------
+geolocator = Nominatim(user_agent="traffic_app", timeout=10)
 
-# ------------------ PREDICTION ------------------
-if predict_clicked:
-
-    data = {
-        "start_area": start_area,
-        "end_area": end_area,
-        "distance_km": distance,
-        "average_speed_kmph": avg_speed,
-        "time_of_day": time_of_day,
-        "day_of_week": day_of_week,
-        "weather_condition": weather,
-        "traffic_density_level": traffic,
-        "road_type": road
-    }
-
+def get_coordinates(place):
     try:
-        response = requests.post(API_URL, json=data)
+        location = geolocator.geocode(place)
+        if location:
+            return location.latitude, location.longitude
+    except:
+        return None, None
+    return None, None
 
-        if response.status_code == 200:
-            result = response.json()
-            st.success(f"🚗 Estimated Travel Time: {result['travel_time']:.2f} minutes")
+# ------------------ WEATHER API ------------------
+def get_weather(lat, lon):
+    try:
+        url = f"https://api.openweathermap.org/data/2.5/weather?lat={lat}&lon={lon}&appid={WEATHER_API_KEY}"
+        response = requests.get(url).json()
+
+        weather_main = response['weather'][0]['main']
+
+        if weather_main.lower() in ["rain", "drizzle"]:
+            return "Rainy"
+        elif weather_main.lower() in ["fog", "mist", "haze"]:
+            return "Foggy"
         else:
-            st.error("❌ API Error")
+            return "Clear"
 
     except:
-        st.error("❌ Could not connect to API. Make sure Flask server is running.")
+        return "Clear"
 
-# ------------------ MAP SECTION ------------------
-if map_clicked:
+# ------------------ TRAFFIC COLOR FUNCTION ------------------
+def get_traffic_color(level):
+    if level == "Low":
+        return "green"
+    elif level == "Medium":
+        return "orange"
+    elif level == "High":
+        return "red"
+    return "blue"
 
-    st.subheader("🗺️ Route Visualization")
+# ------------------ MAP + LOGIC ------------------
+if start_area and end_area:
 
-    geolocator = Nominatim(user_agent="traffic_app")
+    src_lat, src_lon = get_coordinates(start_area)
+    dst_lat, dst_lon = get_coordinates(end_area)
 
-    try:
-        start_loc = geolocator.geocode(start_area)
-        end_loc = geolocator.geocode(end_area)
+    if src_lat and dst_lat:
 
-        if start_loc and end_loc:
+        # Get real-time weather
+        weather = get_weather(src_lat, src_lon)
+        st.sidebar.write(f"🌦️ Live Weather: {weather}")
 
-            start_coords = [start_loc.latitude, start_loc.longitude]
-            end_coords = [end_loc.latitude, end_loc.longitude]
+        # Center map
+        mid_lat = (src_lat + dst_lat) / 2
+        mid_lon = (src_lon + dst_lon) / 2
 
-            # Create map centered at midpoint
-            mid_lat = (start_coords[0] + end_coords[0]) / 2
-            mid_lon = (start_coords[1] + end_coords[1]) / 2
+        m = folium.Map(location=[mid_lat, mid_lon], zoom_start=11)
 
-            m = folium.Map(location=[mid_lat, mid_lon], zoom_start=11)
+        # Start marker
+        folium.Marker(
+            [src_lat, src_lon],
+            tooltip="Start",
+            icon=folium.Icon(color="green")
+        ).add_to(m)
 
-            # Start Marker
-            folium.Marker(
-                start_coords,
-                tooltip="Start",
-                icon=folium.Icon(color="green")
-            ).add_to(m)
+        # Destination marker
+        folium.Marker(
+            [dst_lat, dst_lon],
+            tooltip="Destination",
+            icon=folium.Icon(color="red")
+        ).add_to(m)
 
-            # End Marker
-            folium.Marker(
-                end_coords,
-                tooltip="End",
-                icon=folium.Icon(color="red")
-            ).add_to(m)
+        # Traffic-based route
+        traffic_color = get_traffic_color(traffic)
 
-            # Draw line (route approximation)
-            folium.PolyLine(
-                [start_coords, end_coords],
-                tooltip="Route",
-                weight=5
-            ).add_to(m)
+        folium.PolyLine(
+            [[src_lat, src_lon], [dst_lat, dst_lon]],
+            color=traffic_color,
+            weight=6,
+            tooltip=f"Traffic: {traffic}"
+        ).add_to(m)
 
-            # Display map
-            st_folium(m, width=900, height=500)
+        # Show map
+        st.subheader("🗺️ Route Map")
+        st_folium(m, width=900, height=500)
 
-        else:
-            st.error("❌ Could not find one or both locations")
+        # Traffic legend
+        st.markdown("""
+        ### 🚦 Traffic Legend
+        - 🟢 Green → Low Traffic  
+        - 🟠 Orange → Medium Traffic  
+        - 🔴 Red → High Traffic  
+        """)
 
-    except Exception as e:
-        st.error("❌ Error loading map")
+        # ------------------ PREDICTION ------------------
+        if predict_btn:
+
+            data = {
+                "start_area": start_area,
+                "end_area": end_area,
+                "distance_km": distance,
+                "average_speed_kmph": avg_speed,
+                "time_of_day": time_of_day,
+                "day_of_week": day_of_week,
+                "weather_condition": weather,  # auto weather
+                "traffic_density_level": traffic,
+                "road_type": road
+            }
+
+            try:
+                response = requests.post(API_URL, json=data)
+
+                if response.status_code == 200:
+                    result = response.json()
+                    st.success(
+                        f"🚗 Estimated Travel Time: {result['travel_time']:.2f} minutes"
+                    )
+                else:
+                    st.error("❌ API Error - Check backend")
+
+            except Exception as e:
+                st.error("❌ Cannot connect to API")
+
+    else:
+        st.warning("⚠️ Enter valid locations")
+
+else:
+    st.info("ℹ️ Please enter start and destination")
