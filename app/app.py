@@ -71,15 +71,24 @@ def encode_inputs(distance, speed, time_of_day, traffic, weather, road):
 # ------------------ GEOLOCATOR ------------------
 geolocator = Nominatim(user_agent="traffic_app", timeout=10)
 
+@st.cache_data(ttl=300)
 def get_coordinates(place):
     try:
-        url = f"https://api.opencagedata.com/geocode/v1/json?q={place}&key=eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6Ijg5NzcwZTI1OGRkNjRiYTE4OGJlNmFmMGE3ODAzOGQ0IiwiaCI6Im11cm11cjY0In0="
+        API_KEY = "eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6Ijg5NzcwZTI1OGRkNjRiYTE4OGJlNmFmMGE3ODAzOGQ0IiwiaCI6Im11cm11cjY0In0="
 
-        response = requests.get(url).json()
+        url = f"https://api.opencagedata.com/geocode/v1/json?q={place}&key={"eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6Ijg5NzcwZTI1OGRkNjRiYTE4OGJlNmFmMGE3ODAzOGQ0IiwiaCI6Im11cm11cjY0In0="}"
 
-        if response['results']:
-            lat = response['results'][0]['geometry']['lat']
-            lng = response['results'][0]['geometry']['lng']
+        response = requests.get(url)
+
+        if response.status_code != 200:
+            st.error(f"API Error: {response.status_code}")
+            return None, None
+
+        data = response.json()
+
+        if data['results']:
+            lat = data['results'][0]['geometry']['lat']
+            lng = data['results'][0]['geometry']['lng']
             return lat, lng
 
         return None, None
@@ -90,7 +99,7 @@ def get_coordinates(place):
 # ------------------ WEATHER API ------------------
 def get_weather(lat, lon):
     try:
-        url = f"https://api.openweathermap.org/data/2.5/weather?lat={lat}&lon={lon}&appid={WEATHER_API_KEY}"
+        url = f"https://api.openweathermap.org/data/2.5/weather?lat={lat}&lon={lon}&appid={"d624225ef53223f6fa372e4c2d33a2bf"}"
         response = requests.get(url).json()
 
         weather_main = response['weather'][0]['main']
@@ -115,7 +124,7 @@ def get_traffic_color(level):
 # ------------------ ROUTE FUNCTION ------------------
 def get_route(start, end):
     try:
-        client = openrouteservice.Client(key=ORS_API_KEY)
+        client = openrouteservice.Client(key="eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6Ijg5NzcwZTI1OGRkNjRiYTE4OGJlNmFmMGE3ODAzOGQ0IiwiaCI6Im11cm11cjY0In0=")
 
         route = client.directions(
             coordinates=[start, end],
