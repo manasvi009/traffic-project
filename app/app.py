@@ -73,12 +73,19 @@ geolocator = Nominatim(user_agent="traffic_app", timeout=10)
 
 def get_coordinates(place):
     try:
-        location = geolocator.geocode(place)
+        location = geolocator.geocode(
+            place + ", India",
+            exactly_one=True
+        )
+
         if location:
             return location.latitude, location.longitude
-    except:
+        else:
+            return None, None
+
+    except Exception as e:
+        st.error(f"Geocoding error: {e}")
         return None, None
-    return None, None
 
 # ------------------ WEATHER API ------------------
 def get_weather(lat, lon):
