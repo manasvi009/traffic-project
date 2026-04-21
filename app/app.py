@@ -3,15 +3,36 @@ import requests
 from geopy.geocoders import Nominatim
 import folium
 from streamlit_folium import st_folium
+import openrouteservice
+import time
+import random
+import pickle
+from folium.plugins import HeatMap
+import os
 
 # ------------------ CONFIG ------------------
 st.set_page_config(page_title="Traffic Prediction System", layout="wide")
 
-API_URL = "https://traffic-api-0w9r.onrender.com/predict"
-WEATHER_API_KEY = "198a7b515a67010cd0cc212227bc7255"
+WEATHER_API_KEY = "d624225ef53223f6fa372e4c2d33a2bf"
+ORS_API_KEY = "eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6Ijg5NzcwZTI1OGRkNjRiYTE4OGJlNmFmMGE3ODAzOGQ0IiwiaCI6Im11cm11cjY0In0="
+
+# ------------------ LOAD ML MODEL ------------------
+model_path = os.path.join(os.path.dirname(__file__), "model.pkl")
+with open(model_path, "rb") as f:
+    model = pickle.load(f)
 
 # ------------------ TITLE ------------------
 st.title("🚦 Smart Traffic Prediction System with Live Map")
+
+# ------------------ AUTO REFRESH ------------------
+st.caption("🔄 Auto-updating traffic every 5 seconds")
+
+if "last_update" not in st.session_state:
+    st.session_state.last_update = time.time()
+
+if time.time() - st.session_state.last_update > 5:
+    st.session_state.last_update = time.time()
+    st.rerun()
 
 # ------------------ SIDEBAR ------------------
 st.sidebar.header("🚗 Enter Trip Details")
@@ -19,21 +40,33 @@ st.sidebar.header("🚗 Enter Trip Details")
 start_area = st.sidebar.text_input("Start Area", "Delhi")
 end_area = st.sidebar.text_input("End Area", "Noida")
 
-distance = st.sidebar.number_input("Distance (km)", min_value=0.1, value=10.0)
-avg_speed = st.sidebar.number_input("Average Speed (km/h)", min_value=1.0, value=40.0)
-
 time_of_day = st.sidebar.slider("Time of Day (0–23)", 0, 23, 10)
 
-day_of_week = st.sidebar.selectbox(
-    "Day of Week",
-    ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"]
-)
-
-# ❌ Removed manual weather input
-traffic = st.sidebar.selectbox("Traffic Density", ["Low","Medium","High"])
 road = st.sidebar.selectbox("Road Type", ["Highway","City","Rural"])
 
 predict_btn = st.sidebar.button("🚀 Predict Travel Time")
+
+# ------------------ LIVE TRAFFIC ------------------
+def get_live_traffic():
+    return random.choice(["Low", "Medium", "High"])
+
+traffic = get_live_traffic()
+st.sidebar.write(f"🚦 Live Traffic: {traffic}")
+
+# ------------------ ENCODER ------------------
+def encode_inputs(distance, speed, time_of_day, traffic, weather, road):
+    traffic_map = {"Low": 1, "Medium": 2, "High": 3}
+    weather_map = {"Clear": 0, "Rainy": 1, "Foggy": 1}
+    road_map = {"Highway": 1, "City": 2, "Rural": 3}
+
+    return [[
+        distance,
+        speed,
+        time_of_day,
+        traffic_map[traffic],
+        weather_map[weather],
+        road_map[road]
+    ]]
 
 # ------------------ GEOLOCATOR ------------------
 geolocator = Nominatim(user_agent="traffic_app", timeout=10)
@@ -61,21 +94,48 @@ def get_weather(lat, lon):
             return "Foggy"
         else:
             return "Clear"
-
     except:
         return "Clear"
 
-# ------------------ TRAFFIC COLOR FUNCTION ------------------
+# ------------------ TRAFFIC COLOR ------------------
 def get_traffic_color(level):
-    if level == "Low":
-        return "green"
-    elif level == "Medium":
-        return "orange"
-    elif level == "High":
-        return "red"
-    return "blue"
+    return {
+        "Low": "green",
+        "Medium": "orange",
+        "High": "red"
+    }.get(level, "blue")
 
-# ------------------ MAP + LOGIC ------------------
+# ------------------ ROUTE FUNCTION ------------------
+def get_route(start, end):
+    try:
+        client = openrouteservice.Client(key=ORS_API_KEY)
+
+        route = client.directions(
+            coordinates=[start, end],
+            profile='driving-car',
+            format='geojson'   # 🔥 IMPORTANT LINE
+        )
+
+        # Now geometry has coordinates
+        coords = route['features'][0]['geometry']['coordinates']
+
+        # Convert (lon, lat) → (lat, lon)
+        return [(c[1], c[0]) for c in coords]
+
+    except Exception as e:
+        st.error(f"Route Error: {e}")
+        return None
+# ------------------ DISTANCE FUNCTION ------------------
+def calculate_distance(route_coords):
+    total = 0
+    for i in range(len(route_coords) - 1):
+        lat1, lon1 = route_coords[i]
+        lat2, lon2 = route_coords[i+1]
+        total += ((lat2 - lat1)**2 + (lon2 - lon1)**2) ** 0.5
+
+    return total * 111
+
+# ------------------ MAIN ------------------
 if start_area and end_area:
 
     src_lat, src_lon = get_coordinates(start_area)
@@ -83,80 +143,71 @@ if start_area and end_area:
 
     if src_lat and dst_lat:
 
-        # Get real-time weather
         weather = get_weather(src_lat, src_lon)
         st.sidebar.write(f"🌦️ Live Weather: {weather}")
 
-        # Center map
+        # Map
         mid_lat = (src_lat + dst_lat) / 2
         mid_lon = (src_lon + dst_lon) / 2
 
-        m = folium.Map(location=[mid_lat, mid_lon], zoom_start=11)
+        m = folium.Map(location=[mid_lat, mid_lon], zoom_start=12)
 
-        # Start marker
-        folium.Marker(
-            [src_lat, src_lon],
-            tooltip="Start",
-            icon=folium.Icon(color="green")
-        ).add_to(m)
+        # Markers
+        folium.Marker([src_lat, src_lon], tooltip="Start",
+                      icon=folium.Icon(color="green")).add_to(m)
 
-        # Destination marker
-        folium.Marker(
-            [dst_lat, dst_lon],
-            tooltip="Destination",
-            icon=folium.Icon(color="red")
-        ).add_to(m)
+        folium.Marker([dst_lat, dst_lon], tooltip="Destination",
+                      icon=folium.Icon(color="red")).add_to(m)
 
-        # Traffic-based route
-        traffic_color = get_traffic_color(traffic)
+        route_coords = get_route((src_lon, src_lat), (dst_lon, dst_lat))
 
-        folium.PolyLine(
-            [[src_lat, src_lon], [dst_lat, dst_lon]],
-            color=traffic_color,
-            weight=6,
-            tooltip=f"Traffic: {traffic}"
-        ).add_to(m)
+        if route_coords:
 
-        # Show map
-        st.subheader("🗺️ Route Map")
+            # ✅ CALCULATE DISTANCE HERE
+            distance = calculate_distance(route_coords)
+
+            # -------- ROUTE --------
+            for i in range(len(route_coords) - 1):
+                segment_traffic = random.choice(["Low", "Medium", "High"])
+                color = get_traffic_color(segment_traffic)
+
+                folium.PolyLine(
+                    [route_coords[i], route_coords[i + 1]],
+                    color=color,
+                    weight=6
+                ).add_to(m)
+
+            # -------- VEHICLE --------
+            vehicle_position = random.choice(route_coords)
+
+            folium.Marker(
+                location=vehicle_position,
+                tooltip="🚗 Live Vehicle",
+                icon=folium.Icon(color="blue")
+            ).add_to(m)
+
+            # -------- HEATMAP --------
+            heat_data = [[c[0], c[1], random.uniform(0.2, 1.0)] for c in route_coords]
+            HeatMap(heat_data).add_to(m)
+
+            # -------- PREDICTION --------
+            if predict_btn:
+                input_data = encode_inputs(
+                    distance,
+                    40,
+                    time_of_day,
+                    traffic,
+                    weather,
+                    road
+                )
+
+                prediction = model.predict(input_data)[0]
+                st.success(f"🚗 Estimated Travel Time: {prediction:.2f} minutes")
+
+        else:
+            st.warning("⚠️ Route not found")
+
         st_folium(m, width=900, height=500)
-
-        # Traffic legend
-        st.markdown("""
-        ### 🚦 Traffic Legend
-        - 🟢 Green → Low Traffic  
-        - 🟠 Orange → Medium Traffic  
-        - 🔴 Red → High Traffic  
-        """)
-
-        # ------------------ PREDICTION ------------------
-        if predict_btn:
-
-            data = {
-                "start_area": start_area,
-                "end_area": end_area,
-                "distance_km": distance,
-                "average_speed_kmph": avg_speed,
-                "time_of_day": time_of_day,
-                "day_of_week": day_of_week,
-                "weather_condition": weather,  # auto weather
-                "traffic_density_level": traffic,
-                "road_type": road
-            }
-
-            try:
-                response = requests.post(API_URL, json=data)
-
-                if response.status_code == 200:
-                    result = response.json()
-                    st.success(
-                        f"🚗 Estimated Travel Time: {result['travel_time']:.2f} minutes"
-                    )
-                else:
-                    st.error("❌ API Error - Check backend")
-
-            except Exception as e:
-                st.error("❌ Cannot connect to API")
 
     else:
         st.warning("⚠️ Enter valid locations")
