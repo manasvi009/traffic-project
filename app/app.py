@@ -73,20 +73,20 @@ geolocator = Nominatim(user_agent="traffic_app", timeout=10)
 
 def get_coordinates(place):
     try:
-        location = geolocator.geocode(
-            place + ", India",
-            exactly_one=True
-        )
+        url = f"https://api.opencagedata.com/geocode/v1/json?q={place}&key=eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6Ijg5NzcwZTI1OGRkNjRiYTE4OGJlNmFmMGE3ODAzOGQ0IiwiaCI6Im11cm11cjY0In0="
 
-        if location:
-            return location.latitude, location.longitude
-        else:
-            return None, None
+        response = requests.get(url).json()
 
-    except Exception as e:
-        st.error(f"Geocoding error: {e}")
+        if response['results']:
+            lat = response['results'][0]['geometry']['lat']
+            lng = response['results'][0]['geometry']['lng']
+            return lat, lng
+
         return None, None
 
+    except Exception as e:
+        st.error(f"Error: {e}")
+        return None, None
 # ------------------ WEATHER API ------------------
 def get_weather(lat, lon):
     try:

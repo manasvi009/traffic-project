@@ -9,3 +9,4 @@ geopy
 folium
 streamlit-folium
 openrouteservice
+requests
